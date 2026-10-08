@@ -12,3 +12,11 @@ Las tablas se crean solas la primera vez, en el esquema `lujan_padel`. Ese esque
 - Turnos fijos: se cargan en el panel y ocupan ese día y horario todas las semanas. Las reservas manuales y los fijos no vencen.
 - Paletas: el cliente elige de 0 a 4 al reservar; el precio por paleta se cambia en el panel.
 - Pruebas: `npm test`. Usan un esquema temporal que se borra al terminar.
+
+## Publicar en Vercel
+
+1. En Vercel: **Add New → Project** → importá este repo (`lujan-padel`). Framework: **Other**; no cambies los comandos de build.
+2. En **Environment Variables** cargá `DATABASE_URL` (la del Transaction pooler de Supabase, con la contraseña) y `ADMIN_PASSWORD`.
+3. **Deploy**. La web queda en `https://<tu-proyecto>.vercel.app` y el panel en `/admin`.
+
+`vercel.json` sirve `public/` como estático, manda `/api/*` a la función `api/index.js` y la corre en `cle1` (Cleveland), al lado de la base de Supabase en `us-east-2`.

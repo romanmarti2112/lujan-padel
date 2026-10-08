@@ -1,0 +1,8 @@
+{
+  "outputDirectory": "public",
+  "regions": ["cle1"],
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/admin", "destination": "/admin.html" }
+  ]
+}

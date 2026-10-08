@@ -1,8 +1,8 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
-import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
-import { extname, join, normalize } from 'node:path';
+import { timingSafeEqual, createHash, createHmac } from 'node:crypto';
+import { extname, join, normalize, resolve } from 'node:path';
 
 const PORT = process.env.PORT || 3000;
 const TZ = 'America/Argentina/Mendoza';
@@ -91,16 +91,27 @@ async function prepare(date) {
 }
 
 // --- auth ---
-const sessions = new Set();
+// Cookie firmada (vencimiento.firma) en vez de sesiones en memoria: en Vercel cada pedido puede caer en otra instancia.
+// Cambiar ADMIN_PASSWORD invalida todas las sesiones.
 const sha = s => createHash('sha256').update(String(s)).digest();
-const isAdmin = req => sessions.has(/(?:^|;\s*)admin=([a-f0-9]+)/.exec(req.headers.cookie || '')?.[1]);
+const SECRET = sha('lujan-admin:' + ADMIN_PASSWORD);
+const sign = exp => createHmac('sha256', SECRET).update(String(exp)).digest();
+const SESSION_HOURS = 12;
+const newSession = () => { const exp = Date.now() + SESSION_HOURS * 3600e3; return `${exp}.${sign(exp).toString('hex')}`; };
+const isAdmin = req => {
+  const m = /(?:^|;\s*)admin=(\d+)\.([a-f0-9]{64})/.exec(req.headers.cookie || '');
+  return !!m && Number(m[1]) > Date.now() && timingSafeEqual(Buffer.from(m[2], 'hex'), sign(m[1]));
+};
+const cookie = (req, value, maxAge) =>
+  `admin=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 
 // --- http helpers ---
 const send = (res, code, data, headers = {}) => {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
   res.end(JSON.stringify(data));
 };
-const body = req => new Promise((ok, fail) => {
+// Vercel ya parsea el JSON en req.body; en local se lee el stream.
+const body = req => 'body' in req ? Promise.resolve(req.body ?? {}) : new Promise((ok, fail) => {
   let raw = '';
   req.on('data', c => { raw += c; if (raw.length > 1e4) { fail(new Error('too big')); req.destroy(); } });
   req.on('end', () => { try { ok(raw ? JSON.parse(raw) : {}); } catch { fail(new Error('bad json')); } });
@@ -163,16 +174,13 @@ async function api(req, res, url) {
   if (p === '/api/admin/login' && m === 'POST') {
     const { password } = await body(req);
     if (!timingSafeEqual(sha(password), sha(ADMIN_PASSWORD))) return send(res, 401, { error: 'Contraseña incorrecta' });
-    const token = randomBytes(24).toString('hex');
-    sessions.add(token);
-    return send(res, 200, { ok: true }, { 'Set-Cookie': `admin=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200` });
+    return send(res, 200, { ok: true }, { 'Set-Cookie': cookie(req, newSession(), SESSION_HOURS * 3600) });
   }
   if (!p.startsWith('/api/admin/')) return send(res, 404, { error: 'No encontrado' });
   if (!isAdmin(req)) return send(res, 401, { error: 'No autorizado' });
 
   if (p === '/api/admin/logout' && m === 'POST') {
-    sessions.delete(/admin=([a-f0-9]+)/.exec(req.headers.cookie)[1]);
-    return send(res, 200, { ok: true }, { 'Set-Cookie': 'admin=; Path=/; Max-Age=0' });
+    return send(res, 200, { ok: true }, { 'Set-Cookie': cookie(req, '', 0) });
   }
   if (p === '/api/admin/data' && m === 'GET') {
     const date = url.searchParams.get('date');
@@ -247,7 +255,7 @@ async function api(req, res, url) {
   send(res, 404, { error: 'No encontrado' });
 }
 
-http.createServer(async (req, res) => {
+export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
@@ -263,4 +271,9 @@ http.createServer(async (req, res) => {
     console.error(e);
     send(res, 500, { error: 'Error del servidor' });
   }
-}).listen(PORT, () => console.log(`Luján Pádel en http://localhost:${PORT}  (admin: /admin)`));
+}
+
+// En local (node server.js) escucha en un puerto; en Vercel se usa el handler desde api/index.js.
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+  http.createServer(handler).listen(PORT, () => console.log(`Luján Pádel en http://localhost:${PORT}  (admin: /admin)`));
+}
