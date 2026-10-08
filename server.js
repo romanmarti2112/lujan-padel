@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
 import { timingSafeEqual, createHash, createHmac } from 'node:crypto';
 import { extname, join, normalize, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PORT = process.env.PORT || 3000;
 const TZ = 'America/Argentina/Mendoza';
@@ -117,6 +118,10 @@ const body = req => 'body' in req ? Promise.resolve(req.body ?? {}) : new Promis
   req.on('end', () => { try { ok(raw ? JSON.parse(raw) : {}); } catch { fail(new Error('bad json')); } });
 });
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml' };
+// Rutas literales con new URL(...) para que Vercel empaquete los HTML dentro de la función
+// (con el preset Node, / y /admin pueden llegar acá en vez de al estático).
+const INDEX = new URL('./public/index.html', import.meta.url), ADMIN = new URL('./public/admin.html', import.meta.url);
+const PAGES = { '/': INDEX, '/index.html': INDEX, '/admin': ADMIN, '/admin.html': ADMIN };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function person(b) {
@@ -259,8 +264,8 @@ export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
-    const file = { '/': 'index.html', '/admin': 'admin.html' }[url.pathname] || url.pathname;
-    const full = normalize(join(PUBLIC, file));
+    const page = PAGES[url.pathname];
+    const full = page ? fileURLToPath(page) : normalize(join(PUBLIC, url.pathname));
     if (!full.startsWith(PUBLIC)) throw Object.assign(new Error(), { code: 'ENOENT' });
     const data = await readFile(full);
     res.writeHead(200, { 'Content-Type': MIME[extname(full)] || 'application/octet-stream' });
