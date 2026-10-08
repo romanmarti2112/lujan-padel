@@ -131,3 +131,34 @@ th { color: var(--muted); font-weight: 600; }
 .kpis div { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
 .kpis b { display: block; font: italic 800 1.8rem 'Barlow Condensed', sans-serif; color: var(--navy); }
 .kpis span { color: var(--muted); font-size: .85rem; }
+.row label { flex: 1 1 150px; }
+.mob { display: none; }
+.slotrow { border-bottom: 1px solid var(--line); padding: 10px 0; display: grid; gap: 8px; }
+.slothead { display: flex; align-items: baseline; gap: 10px; }
+.slothead b { font: italic 800 1.3rem 'Barlow Condensed', sans-serif; color: var(--navy); }
+.slothead span { color: var(--muted); font-size: .8rem; }
+.cell-court { font-weight: 800; color: var(--navy); text-transform: uppercase; font-size: .75rem; letter-spacing: .5px; }
+@media (max-width: 640px) {
+  .desk { display: none; }
+  .mob { display: block; }
+  .panel { padding: 14px; }
+  .panel h2, .panel h3 { font-size: 1.4rem; }
+  main.section { padding-top: 16px; }
+  .kpis { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .kpis div { padding: 10px; }
+  .kpis b { font-size: 1.15rem; }
+  .kpis span { font-size: .72rem; line-height: 1.25; display: block; }
+  .cell { font-size: .9rem; padding: 10px 12px; }
+  .cell .acts .btn { flex: 1; padding: 9px 10px; }
+  form.row > .btn { width: 100%; }
+  form.row label { flex-basis: 100%; }
+  form.row label:has(select) { flex-basis: calc(50% - 6px); }
+  .logo .brand { font-size: 1.2rem; }
+  /* Tabla de canchas como tarjetas */
+  table.cards tr:first-child { display: none; }
+  table.cards tr { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  table.cards td { border: 0; padding: 0; }
+  table.cards td::before { content: attr(data-label); display: block; font-size: .75rem; color: var(--muted); font-weight: 600; }
+  table.cards td:last-child { align-self: end; }
+  table.cards td:last-child .btn { width: 100%; }
+}

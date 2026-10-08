@@ -39,7 +39,8 @@
 
       <section class="panel">
         <h3>Reservas del día</h3>
-        <div class="scroll"><table id="grid"></table></div>
+        <div class="scroll desk"><table id="grid"></table></div>
+        <div class="mob" id="list"></div>
         <div id="expired"></div>
       </section>
 
@@ -86,7 +87,7 @@
 
       <section class="panel">
         <h3>Canchas y precios</h3>
-        <div class="scroll"><table id="courtsTbl"></table></div>
+        <div class="scroll"><table id="courtsTbl" class="cards"></table></div>
         <form class="row" id="newCourt" style="margin-top:14px">
           <label>Nueva cancha<input name="name" required placeholder="Cancha 7"></label>
           <label>Tipo<input name="kind" placeholder="Blindex"></label>
@@ -129,19 +130,26 @@ async function load() {
     <div><b>${money(sum('pendiente'))}</b><span>pendiente de pago (${active.filter(b => b.status === 'pendiente').length})</span></div>`;
 
   const at = new Map(active.map(b => [b.court_id + '|' + b.start, b]));
-  $('grid').innerHTML = `<tr><th>Hora</th>${courts.map(c => `<th>${esc(c.name)}</th>`).join('')}</tr>` +
-    data.slots.map(s => `<tr><th>${s}</th>${courts.map(c => {
-      const b = at.get(c.id + '|' + s);
-      if (!b) return '<td><div class="cell free">Libre</div></td>';
-      return `<td><div class="cell ${b.status}">
+  const cell = (b, title = '') => `<div class="cell ${b.status}">
+        ${title ? `<div class="cell-court">${esc(title)}</div>` : ''}
         <b>${esc(b.name)}</b><br><a href="https://wa.me/${esc(b.phone.replace(/\D/g, ''))}" target="_blank" rel="noopener">${esc(b.phone)}</a><br>
         #${b.id} · ${money(b.price)} · ${b.status}${b.fixed_id ? ' · <b>FIJO</b>' : ''}${b.paddles ? ` · 🏓 ${b.paddles} paleta${b.paddles > 1 ? 's' : ''}` : ''}
         ${b.expires_at && b.status === 'pendiente' ? `<br><small>Se libera a las ${new Date(b.expires_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} si no pagan</small>` : ''}
         <div class="acts">
           ${b.status === 'pendiente' ? `<button class="btn btn-navy btn-sm" data-id="${b.id}" data-st="pagado">Marcar pagado</button>` : `<button class="btn btn-ghost btn-sm" data-id="${b.id}" data-st="pendiente">Pendiente</button>`}
           <button class="btn btn-ghost btn-sm" data-id="${b.id}" data-st="cancelado">Cancelar</button>
-        </div></div></td>`;
+        </div></div>`;
+  $('grid').innerHTML = `<tr><th>Hora</th>${courts.map(c => `<th>${esc(c.name)}</th>`).join('')}</tr>` +
+    data.slots.map(s => `<tr><th>${s}</th>${courts.map(c => {
+      const b = at.get(c.id + '|' + s);
+      return `<td>${b ? cell(b) : '<div class="cell free">Libre</div>'}</td>`;
     }).join('')}</tr>`).join('');
+  // Celular: un bloque por horario con las reservas y qué canchas quedan libres.
+  $('list').innerHTML = data.slots.map(s => {
+    const busy = courts.filter(c => at.has(c.id + '|' + s)), free = courts.filter(c => !at.has(c.id + '|' + s));
+    return `<div class="slotrow"><div class="slothead"><b>${s}</b><span>${!busy.length ? 'Todas libres' : free.length ? 'Libres: ' + free.map(c => esc(c.name)).join(', ') : 'Completo'}</span></div>
+      ${busy.map(c => cell(at.get(c.id + '|' + s), c.name)).join('')}</div>`;
+  }).join('');
 
   const vencidas = data.bookings.filter(b => b.status === 'vencido');
   $('expired').innerHTML = vencidas.length ? `<h4 style="margin:16px 0 6px">Vencidas (no se verificó el pago en 30 min)</h4>` + vencidas.map(b =>
@@ -150,8 +158,8 @@ async function load() {
 
   for (const sel of ['manualCourt', 'fixedCourt']) $(sel).innerHTML = courts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   for (const sel of ['manualStart', 'fixedStart']) $(sel).innerHTML = data.slots.map(s => `<option>${s}</option>`).join('');
-  $('fixedTbl').innerHTML = data.fixed.length ? '<tr><th>Día</th><th>Horario</th><th>Cancha</th><th>Nombre</th><th>Teléfono</th><th></th></tr>' + data.fixed.map(f =>
-    `<tr><td>${DAYS[f.weekday]}</td><td>${f.start}</td><td>${esc(f.court)}</td><td>${esc(f.name)}</td><td>${esc(f.phone)}</td>
+  $('fixedTbl').innerHTML = data.fixed.length ? '<tr><th>Cuándo</th><th>Quién</th><th></th></tr>' + data.fixed.map(f =>
+    `<tr><td><b>${DAYS[f.weekday]} ${f.start}</b><br>${esc(f.court)}</td><td>${esc(f.name)}<br>${esc(f.phone)}</td>
       <td><button class="btn btn-ghost btn-sm" data-del-fixed="${f.id}">Quitar</button></td></tr>`).join('') : '<tr><td>No hay turnos fijos.</td></tr>';
 
   const f = $('settings');
@@ -159,10 +167,10 @@ async function load() {
 
   $('courtsTbl').innerHTML = '<tr><th>Nombre</th><th>Tipo</th><th>Precio por turno</th><th>Activa</th><th></th></tr>' +
     data.courts.map(c => `<tr data-court="${c.id}">
-      <td><input name="name" value="${esc(c.name)}"></td>
-      <td><input name="kind" value="${esc(c.kind)}"></td>
-      <td><input name="price" type="number" min="0" step="100" value="${c.price}"></td>
-      <td><input name="active" type="checkbox" ${c.active ? 'checked' : ''} style="width:auto"></td>
+      <td data-label="Nombre"><input name="name" value="${esc(c.name)}"></td>
+      <td data-label="Tipo"><input name="kind" value="${esc(c.kind)}"></td>
+      <td data-label="Precio por turno"><input name="price" type="number" min="0" step="100" value="${c.price}"></td>
+      <td data-label="Activa"><input name="active" type="checkbox" ${c.active ? 'checked' : ''} style="width:auto"></td>
       <td><button class="btn btn-navy btn-sm" data-save>Guardar</button></td></tr>`).join('');
 }
 
@@ -180,7 +188,7 @@ document.querySelectorAll('[data-shift]').forEach(b => b.onclick = () => {
   const d = new Date($('date').value + 'T12:00'); d.setDate(d.getDate() + Number(b.dataset.shift));
   $('date').value = d.toISOString().slice(0, 10); load().catch(() => {});
 });
-$('expired').onclick = e => $('grid').onclick(e);
+$('expired').onclick = $('list').onclick = e => $('grid').onclick(e);
 $('fixedForm').onsubmit = async e => {
   e.preventDefault();
   try {
