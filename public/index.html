@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Luján Pádel Club · Reservá tu cancha</title>
+  <meta name="description" content="Luján Pádel Club: 5 canchas de blindex en Lamadrid 220, Luján de Cuyo. Reservá tu turno online.">
+  <link rel="icon" href="img/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,800&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="logo" href="#"><img src="img/logo.jpg" alt=""><span class="brand">Luján Pádel</span></a>
+      <nav class="nav">
+        <a href="#reservar">Reservar</a>
+        <a href="#galeria">El club</a>
+        <a href="#contacto">Contacto</a>
+        <a class="btn btn-ball btn-sm" href="#reservar">Reservar turno</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow" style="color:var(--ball)">Luján de Cuyo · Mendoza</p>
+      <h1>Tu cancha te <span>espera</span></h1>
+      <p>Elegí el día, el horario y la cancha. Reservá en menos de un minuto y pagá con Mercado Pago.</p>
+      <div class="cta">
+        <a class="btn btn-ball" href="#reservar">Ver turnos disponibles</a>
+        <a class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" href="https://wa.me/542613463901" target="_blank" rel="noopener">Consultas por WhatsApp</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="stats">
+      <div><b>5 canchas</b><span>de blindex</span></div>
+      <div><b>Paletas</b><span>en alquiler con tu turno</span></div>
+      <div><b>Americanos</b><span>academia, torneos y ranking</span></div>
+    </div>
+  </div>
+
+  <section class="section" id="reservar">
+    <div class="wrap">
+      <p class="eyebrow">Turnos online</p>
+      <h2>Reservá tu turno</h2>
+      <div class="days" id="days" role="group" aria-label="Elegí el día"></div>
+      <div class="legend">
+        <span><i style="background:#eef5ff;border:1.5px solid var(--court)"></i>Disponible</span>
+        <span><i style="background:var(--ball)"></i>Seleccionado</span>
+        <span><i style="background:#f1f3f7;border:1.5px solid var(--line)"></i>Ocupado</span>
+      </div>
+      <div class="courts" id="courts" aria-live="polite"><p>Cargando turnos…</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="galeria" style="padding-top:0">
+    <div class="wrap">
+      <p class="eyebrow">El club</p>
+      <h2>Se vive en la cancha</h2>
+      <div class="gallery">
+        <img src="img/p1.jpg" alt="Jugadores de la academia en la cancha" loading="lazy">
+        <img src="img/p3.jpg" alt="Partido de menores en la red" loading="lazy">
+        <img src="img/p2.jpg" alt="Jugadores en Luján Pádel" loading="lazy">
+        <img src="img/p4.jpg" alt="Torneo en Luján Pádel" loading="lazy">
+        <img src="img/p5.jpg" alt="Jugadores en Luján Pádel" loading="lazy">
+        <img src="img/p6.jpg" alt="Jugadores en Luján Pádel" loading="lazy">
+        <img src="img/p8.jpg" alt="Jugadores en Luján Pádel" loading="lazy">
+        <img src="img/p10.jpg" alt="Jugadores en Luján Pádel" loading="lazy">
+      </div>
+    </div>
+  </section>
+
+  <section class="section dark" id="contacto">
+    <div class="wrap contact">
+      <div>
+        <p class="eyebrow" style="color:var(--ball)">Contacto</p>
+        <h2>Vení a jugar</h2>
+        <ul>
+          <li>📍 Lamadrid 220, Luján de Cuyo, Mendoza</li>
+          <li>📞 261 346-3901 (WhatsApp)</li>
+          <li>📸 <a href="https://www.instagram.com/lujan.padel/" target="_blank" rel="noopener">@lujan.padel</a></li>
+        </ul>
+        <a class="btn btn-wa" href="https://wa.me/542613463901" target="_blank" rel="noopener">Escribinos por WhatsApp</a>
+      </div>
+      <iframe title="Mapa de Luján Pádel" loading="lazy" src="https://www.google.com/maps?q=Lamadrid+220,+Luj%C3%A1n+de+Cuyo,+Mendoza&output=embed"></iframe>
+    </div>
+  </section>
+
+  <footer><div class="wrap"><span>© Luján Pádel Club</span><a href="/admin">Acceso administración</a></div></footer>
+
+  <div class="bar" id="bar">
+    <div class="wrap">
+      <span id="barText"></span>
+      <button class="btn btn-ball" id="barBtn">Continuar</button>
+    </div>
+  </div>
+
+  <dialog id="formDlg">
+    <form method="dialog" id="form">
+      <div class="modal-head"><h3>Confirmá tu reserva</h3><p id="formSummary"></p></div>
+      <div class="modal-body">
+        <label>Nombre y apellido<input name="name" required minlength="2" maxlength="60" autocomplete="name"></label>
+        <label>Teléfono (WhatsApp)<input name="phone" required type="tel" minlength="8" maxlength="20" autocomplete="tel" placeholder="261 123 4567"></label>
+        <label>¿Necesitás paletas?<select name="paddles" id="paddles"></select></label>
+        <p style="margin:0 0 8px;font-weight:700">Total: <span id="formTotal"></span></p>
+        <p class="err" id="formErr"></p>
+        <div class="stack">
+          <button class="btn btn-navy" id="submitBtn" value="ok">Reservar y pagar</button>
+          <button class="btn btn-ghost" type="button" onclick="formDlg.close()">Volver</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="payDlg">
+    <div class="modal-head"><h3>¡Turno reservado!</h3><p id="paySummary"></p></div>
+    <div class="modal-body">
+      <span class="eyebrow">Total a pagar</span>
+      <div class="total" id="payTotal"></div>
+      <p style="margin:0">Transferí por <b>Mercado Pago</b> al alias:</p>
+      <div class="alias"><code>lujanpadelclub</code><button class="btn btn-navy btn-sm" id="copyBtn">Copiar</button></div>
+      <p style="color:var(--navy);background:#fff4d6;padding:8px 12px;border-radius:10px;font-weight:600" id="payDeadline"></p>
+      <ol class="steps">
+        <li>Abrí Mercado Pago → <i>Transferir</i> → pegá el alias.</li>
+        <li>Enviá el comprobante por WhatsApp.</li>
+        <li>El club confirma tu turno al verificar el pago.</li>
+      </ol>
+      <div class="stack">
+        <a class="btn btn-wa" id="waBtn" target="_blank" rel="noopener">Enviar comprobante por WhatsApp</a>
+        <button class="btn btn-ghost" onclick="payDlg.close()">Listo</button>
+      </div>
+    </div>
+  </dialog>
+
+<script>
+const ALIAS = 'lujanpadelclub', WA = '542613463901';
+const $ = id => document.getElementById(id);
+const money = n => '$' + Number(n).toLocaleString('es-AR');
+const longDate = d => new Date(d + 'T12:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+let info, date, pick = null;
+
+const api = async (url, opts) => {
+  const r = await fetch(url, opts && { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts) });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Error');
+  return data;
+};
+
+function renderDays() {
+  const base = new Date(info.today + 'T12:00');
+  $('days').innerHTML = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(base); d.setDate(d.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    const wd = i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : d.toLocaleDateString('es-AR', { weekday: 'short' });
+    return `<button class="day" data-date="${iso}" aria-pressed="${iso === date}"><small>${wd}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('es-AR', { month: 'short' })}</small></button>`;
+  }).join('');
+}
+
+async function load() {
+  pick = null; updateBar();
+  const { slots, taken } = await api('/api/availability?date=' + date);
+  const busy = new Set(taken.map(t => t.court_id + '|' + t.start));
+  $('courts').innerHTML = info.courts.map(c => `
+    <article class="court">
+      <header><div><h3>${c.name}</h3><span class="kind">${c.kind}</span></div><span class="price">${money(c.price)} <small style="color:var(--muted);font-weight:600">/ ${info.slot} min</small></span></header>
+      <div class="slots">${slots.map(s => {
+        const off = s.past || busy.has(c.id + '|' + s.start);
+        return `<button class="slot" data-court="${c.id}" data-start="${s.start}" ${off ? 'disabled aria-label="' + s.start + ' ocupado"' : ''} aria-pressed="false">${s.start}</button>`;
+      }).join('')}</div>
+    </article>`).join('') || '<p>No hay canchas disponibles.</p>';
+}
+
+function updateBar() {
+  $('bar').classList.toggle('show', !!pick);
+  if (pick) $('barText').innerHTML = `<b>${pick.court.name}</b> · ${longDate(date)} · ${pick.start} hs · ${money(pick.court.price)}`;
+}
+
+$('days').onclick = e => {
+  const b = e.target.closest('.day'); if (!b) return;
+  date = b.dataset.date; renderDays(); load();
+};
+$('courts').onclick = e => {
+  const b = e.target.closest('.slot'); if (!b || b.disabled) return;
+  document.querySelectorAll('.slot[aria-pressed="true"]').forEach(x => x.setAttribute('aria-pressed', 'false'));
+  b.setAttribute('aria-pressed', 'true');
+  pick = { court: info.courts.find(c => c.id == b.dataset.court), start: b.dataset.start };
+  updateBar();
+};
+$('barBtn').onclick = () => {
+  $('formSummary').textContent = `${pick.court.name} · ${longDate(date)} · ${pick.start} hs`;
+  $('formErr').textContent = '';
+  const pp = info.paddle_price;
+  $('paddles').innerHTML = '<option value="0">No, llevo las mías</option>' +
+    Array.from({ length: info.max_paddles }, (_, i) => `<option value="${i + 1}">${i + 1} paleta${i ? 's' : ''} (+${money((i + 1) * pp)})</option>`).join('');
+  formTotal();
+  $('formDlg').showModal();
+};
+const formTotal = () => $('formTotal').textContent = money(pick.court.price + $('paddles').value * info.paddle_price);
+$('paddles').onchange = formTotal;
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  $('submitBtn').disabled = true;
+  try {
+    const b = await api('/api/bookings', { court_id: pick.court.id, date, start: pick.start, name: f.get('name'), phone: f.get('phone'), paddles: Number(f.get('paddles')) });
+    $('formDlg').close();
+    const resumen = `${b.court} · ${longDate(b.date)} · ${b.start} hs` + (b.paddles ? ` · ${b.paddles} paleta${b.paddles > 1 ? 's' : ''}` : '');
+    const hasta = new Date(Date.now() + b.minutes * 60e3).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    $('payDeadline').textContent = `⏱ Tenés ${b.minutes} minutos (hasta las ${hasta}) para pagar y mandar el comprobante. Si no, el turno se libera.`;
+    $('paySummary').textContent = `Reserva #${b.id} · ${resumen}`;
+    $('payTotal').textContent = money(b.price);
+    $('waBtn').href = `https://wa.me/${WA}?text=` + encodeURIComponent(
+      `¡Hola! Soy ${f.get('name')}. Te envío el comprobante de la reserva #${b.id}: ${resumen} (${money(b.price)}), pagada al alias ${ALIAS}.`);
+    $('payDlg').showModal();
+    load();
+  } catch (err) {
+    $('formErr').textContent = err.message;
+    if (/reservado/.test(err.message)) load();
+  } finally { $('submitBtn').disabled = false; }
+};
+$('copyBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText(ALIAS); $('copyBtn').textContent = '¡Copiado!'; }
+  catch { $('copyBtn').textContent = 'Copialo a mano'; }
+  setTimeout(() => $('copyBtn').textContent = 'Copiar', 2000);
+};
+
+(async () => {
+  try {
+    info = await api('/api/info');
+    date = info.today;
+    renderDays(); load();
+  } catch { $('courts').innerHTML = '<p>No pudimos cargar los turnos. Escribinos por WhatsApp.</p>'; }
+})();
+</script>
+</body>
+</html>

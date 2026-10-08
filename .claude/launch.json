@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "lujan-padel", "runtimeExecutable": "node", "runtimeArgs": ["--env-file-if-exists=.env", "server.js"], "port": 3000 }
+  ]
+}
