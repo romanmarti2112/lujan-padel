@@ -50,7 +50,41 @@ input:focus, select:focus, .btn:focus-visible, .slot:focus-visible, .day:focus-v
 @media (max-width: 760px) { .nav a:not(.btn) { display: none; } }
 
 /* hero */
-.hero { position: relative; color: #fff; min-height: 78vh; display: grid; align-items: center; background: linear-gradient(100deg, rgba(11,26,63,.95) 30%, rgba(19,39,90,.55)), url(img/p7.jpg) center/cover; overflow: hidden; }
+.hero { position: relative; color: #fff; min-height: 78vh; display: grid; align-items: center; background: #0b1a3f; overflow: hidden; isolation: isolate; }
+.hero::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(100deg, rgba(5,13,36,.92) 25%, rgba(5,13,36,.35) 60%, rgba(5,13,36,0)); }
+.court-bg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; }
+@media (min-width: 900px) { .court-g { transform: translateX(230px); } }
+.lamp { animation: lamp 4s ease-in-out infinite; }
+.lamp.l2 { animation-delay: -1.3s; } .lamp.l3 { animation-delay: -2.1s; } .lamp.l4 { animation-delay: -3.2s; }
+@keyframes lamp { 0%, 100% { opacity: 1; } 50% { opacity: .75; } 52% { opacity: .95; } 54% { opacity: .8; } }
+@media (max-width: 640px) {
+  .hero { min-height: 0; align-items: start; padding: 40px 0 calc(71vw + 24px); background: #050d24; }
+  .court-bg { top: auto; bottom: 0; height: auto; }
+  .hero::before { background: linear-gradient(180deg, rgba(5,13,36,.9) 40%, rgba(5,13,36,0) 75%); }
+}
+
+/* animación al reservar: swing de la paleta, golpe y pique */
+.hit { display: block; width: 100%; max-width: 300px; height: auto; margin: -6px 0 6px; }
+.hit-paddle { transform-box: fill-box; transform-origin: 50% 100%; transform: rotate(-40deg); }
+.hit-ball { transform: translate(112px, 28px); }
+.hit-burst { opacity: 0; transform-box: fill-box; transform-origin: 0 50%; }
+.hit.play .hit-paddle { animation: swing 1.4s cubic-bezier(.5, 0, .3, 1) forwards; }
+.hit.play .hit-ball { animation: fly 1.4s linear forwards; }
+.hit.play .hit-burst { animation: burst 1.4s ease-out forwards; }
+@keyframes swing { 0% { transform: rotate(-40deg); } 40% { transform: rotate(15deg); } 55% { transform: rotate(28deg); } 100% { transform: rotate(6deg); } }
+@keyframes fly {
+  0%, 38% { transform: translate(112px, 28px); }
+  60% { transform: translate(175px, 6px); animation-timing-function: ease-in; }
+  78% { transform: translate(210px, 76px); animation-timing-function: ease-out; }
+  90% { transform: translate(224px, 54px); animation-timing-function: ease-in; }
+  100% { transform: translate(234px, 76px); }
+}
+@keyframes burst { 0%, 36% { opacity: 0; transform: scale(.6); } 44% { opacity: 1; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(1.2); } }
+@media (prefers-reduced-motion: reduce) {
+  .lamp, .hit.play * { animation: none !important; }
+  .hit-paddle { transform: rotate(6deg); }
+  .hit-ball { transform: translate(234px, 76px); }
+}
 .hero h1 { font-size: clamp(2.8rem, 9vw, 5.6rem); max-width: 12ch; }
 .hero h1 span { color: var(--ball); }
 .hero p { font-size: 1.15rem; max-width: 46ch; opacity: .9; margin: 0 0 28px; }
