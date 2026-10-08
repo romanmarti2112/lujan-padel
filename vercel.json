@@ -2,7 +2,7 @@
   "outputDirectory": "public",
   "regions": ["cle1"],
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/", "destination": "/index.html" },
     { "source": "/admin", "destination": "/admin.html" }
   ]
 }

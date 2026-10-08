@@ -273,7 +273,7 @@ export default async function handler(req, res) {
   }
 }
 
-// En local (node server.js) escucha en un puerto; en Vercel se usa el handler desde api/index.js.
+// En local (node server.js) escucha en un puerto; en Vercel (preset Node) se usa el handler exportado.
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   http.createServer(handler).listen(PORT, () => console.log(`Luján Pádel en http://localhost:${PORT}  (admin: /admin)`));
 }
