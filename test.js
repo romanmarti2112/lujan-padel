@@ -22,22 +22,24 @@ try {
   assert.equal(info.courts.length, 5);
   const date = new Date(Date.parse(info.today) + 864e5).toISOString().slice(0, 10); // mañana: ningún turno pasado
   const { data: av } = await call('/api/availability?date=' + date);
-  assert.equal(av.slots[0].start, '08:00');
-  assert.equal(av.slots.length, 10); // 08:00–00:00 en turnos de 90 min
+  assert.equal(av.slots[0].start, '08:30');
+  assert.equal(av.slots.at(-1).start, '23:30');
+  assert.equal(av.slots.length, 11); // 08:30 a 23:30 (termina 01:00), turnos de 90 min
 
   // reserva + paletas
-  const req = { court_id: 1, date, start: '08:00', name: 'Ana', phone: '2611234567' };
+  const req = { court_id: 1, date, start: '08:30', name: 'Ana', phone: '2611234567' };
   const b = await call('/api/bookings', 'POST', { ...req, paddles: 2 });
   assert.equal(b.status, 201);
   assert.equal(b.data.price, 24000 + 2 * 3000);
   assert.equal((await call('/api/bookings', 'POST', req)).status, 409, 'doble reserva');
-  assert.equal((await call('/api/bookings', 'POST', { ...req, start: '08:30' })).status, 400, 'horario fuera de grilla');
+  assert.equal((await call('/api/bookings', 'POST', { ...req, start: '09:00' })).status, 400, 'horario fuera de grilla');
+  assert.equal((await call('/api/bookings', 'POST', { ...req, court_id: 3, start: '23:30' })).status, 201, 'turno de 23:30 a 01:00');
   assert.equal((await call('/api/bookings', 'POST', { ...req, date: '2020-01-01' })).status, 400, 'fecha pasada');
-  assert.equal((await call('/api/bookings', 'POST', { ...req, start: '09:30', paddles: 9 })).status, 400, 'paletas de más');
+  assert.equal((await call('/api/bookings', 'POST', { ...req, start: '10:00', paddles: 9 })).status, 400, 'paletas de más');
 
   // vence a los 30 min sin verificar
   await sql`UPDATE ${bookings} SET expires_at = now() - interval '1 minute' WHERE id = ${b.data.id}`;
-  assert.equal(await takenAt(date, 1, '08:00'), false, 'reserva vencida libera el turno');
+  assert.equal(await takenAt(date, 1, '08:30'), false, 'reserva vencida libera el turno');
   const b2 = await call('/api/bookings', 'POST', req);
   assert.equal(b2.status, 201, 'se puede volver a reservar');
 
@@ -48,36 +50,36 @@ try {
   assert.equal((await call(`/api/admin/bookings/${b.data.id}`, 'PATCH', { status: 'pagado' }, cookie)).status, 409, 'no recuperar vencida si ya está tomada');
   assert.equal((await call(`/api/admin/bookings/${b2.data.id}`, 'PATCH', { status: 'pagado' }, cookie)).status, 200);
   await sql`UPDATE ${bookings} SET expires_at = now() - interval '1 minute' WHERE id = ${b2.data.id}`;
-  assert.equal(await takenAt(date, 1, '08:00'), true, 'pagada no vence');
+  assert.equal(await takenAt(date, 1, '08:30'), true, 'pagada no vence');
   await call(`/api/admin/bookings/${b2.data.id}`, 'PATCH', { status: 'cancelado' }, cookie);
   assert.equal((await call('/api/bookings', 'POST', req)).status, 201, 'cancelar libera el turno');
 
   // reserva manual del admin no vence
-  const man = await call('/api/admin/bookings', 'POST', { ...req, start: '09:30', status: 'pendiente' }, cookie);
+  const man = await call('/api/admin/bookings', 'POST', { ...req, start: '10:00', status: 'pendiente' }, cookie);
   assert.equal(man.status, 201);
   assert.equal((await sql`SELECT expires_at FROM ${bookings} WHERE id = ${man.data.id}`)[0].expires_at, null);
 
   // turno fijo: ocupa el horario todas las semanas
   const wd = new Date(date + 'T12:00Z').getUTCDay(), nextWeek = new Date(Date.parse(date) + 7 * 864e5).toISOString().slice(0, 10);
-  const fx = await call('/api/admin/fixed', 'POST', { court_id: 2, weekday: wd, start: '11:00', name: 'Fijo Juan', phone: '2619999999' }, cookie);
+  const fx = await call('/api/admin/fixed', 'POST', { court_id: 2, weekday: wd, start: '11:30', name: 'Fijo Juan', phone: '2619999999' }, cookie);
   assert.equal(fx.status, 201);
-  assert.equal((await call('/api/admin/fixed', 'POST', { court_id: 2, weekday: wd, start: '11:00', name: 'Otro', phone: '2618888888' }, cookie)).status, 409);
-  assert.equal(await takenAt(date, 2, '11:00'), true);
-  assert.equal(await takenAt(nextWeek, 2, '11:00'), true);
-  assert.equal((await call('/api/bookings', 'POST', { ...req, court_id: 2, start: '11:00' })).status, 409, 'no se pisa un fijo');
+  assert.equal((await call('/api/admin/fixed', 'POST', { court_id: 2, weekday: wd, start: '11:30', name: 'Otro', phone: '2618888888' }, cookie)).status, 409);
+  assert.equal(await takenAt(date, 2, '11:30'), true);
+  assert.equal(await takenAt(nextWeek, 2, '11:30'), true);
+  assert.equal((await call('/api/bookings', 'POST', { ...req, court_id: 2, start: '11:30' })).status, 409, 'no se pisa un fijo');
   // cancelar una fecha del fijo libera solo esa fecha
   const occ = (await call('/api/admin/data?date=' + date, 'GET', null, cookie)).data.bookings.find(x => x.fixed_id);
   await call(`/api/admin/bookings/${occ.id}`, 'PATCH', { status: 'cancelado' }, cookie);
-  assert.equal(await takenAt(date, 2, '11:00'), false, 'fecha cancelada no se recrea');
-  assert.equal(await takenAt(nextWeek, 2, '11:00'), true);
+  assert.equal(await takenAt(date, 2, '11:30'), false, 'fecha cancelada no se recrea');
+  assert.equal(await takenAt(nextWeek, 2, '11:30'), true);
   const fixedId = (await call('/api/admin/data?date=' + date, 'GET', null, cookie)).data.fixed[0].id;
   await call('/api/admin/fixed/' + fixedId, 'DELETE', null, cookie);
-  assert.equal(await takenAt(nextWeek, 2, '11:00'), false, 'quitar el fijo libera las próximas fechas');
+  assert.equal(await takenAt(nextWeek, 2, '11:30'), false, 'quitar el fijo libera las próximas fechas');
 
   // precios
   assert.equal((await call('/api/admin/courts/1', 'PUT', { name: 'Cancha 1', kind: 'Blindex', price: 30000, active: true }, cookie)).status, 200);
-  assert.equal((await call('/api/admin/settings', 'PUT', { open: '08:00', close: '00:00', slot: 90, paddle_price: 5000 }, cookie)).status, 200);
-  assert.equal((await call('/api/bookings', 'POST', { ...req, start: '12:30', paddles: 1 })).data.price, 35000);
+  assert.equal((await call('/api/admin/settings', 'PUT', { open: '08:30', close: '01:00', slot: 90, paddle_price: 5000 }, cookie)).status, 200);
+  assert.equal((await call('/api/bookings', 'POST', { ...req, start: '13:00', paddles: 1 })).data.price, 35000);
   console.log('OK: todas las pruebas pasaron');
 } finally {
   srv.kill();

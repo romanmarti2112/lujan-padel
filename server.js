@@ -53,7 +53,7 @@ await sql.unsafe(`
   ALTER TABLE ${SCHEMA}.settings ENABLE ROW LEVEL SECURITY;
   ALTER TABLE ${SCHEMA}.fixed ENABLE ROW LEVEL SECURITY;
   ALTER TABLE ${SCHEMA}.bookings ENABLE ROW LEVEL SECURITY;
-  INSERT INTO ${SCHEMA}.settings VALUES ('open','08:00'), ('close','00:00'), ('slot','90'), ('paddle_price','3000')
+  INSERT INTO ${SCHEMA}.settings VALUES ('open','08:30'), ('close','01:00'), ('slot','90'), ('paddle_price','3000')
     ON CONFLICT DO NOTHING;
 `);
 if (!(await sql`SELECT 1 FROM ${t.courts} LIMIT 1`).length) {
