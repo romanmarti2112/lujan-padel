@@ -9,6 +9,9 @@ const PORT = process.env.PORT || 3000;
 const TZ = 'America/Argentina/Mendoza';
 const PAY_MINUTES = 30; // reserva web sin verificar → se libera
 const MAX_PADDLES = 4;
+// Anti-abuso de reservas web: reservas sin pagar por teléfono y reservas por hora por conexión.
+const MAX_PENDING_PER_PHONE = 2;
+const MAX_PER_IP_HOUR = Number(process.env.MAX_PER_IP_HOUR) || 4;
 const PUBLIC = join(import.meta.dirname, 'public');
 let DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -45,6 +48,7 @@ await sql.unsafe(`
     paddles integer NOT NULL DEFAULT 0, fixed_id integer REFERENCES ${SCHEMA}.fixed(id),
     status text NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','pagado','cancelado','vencido')),
     expires_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+  ALTER TABLE ${SCHEMA}.bookings ADD COLUMN IF NOT EXISTS ip_hash text;
   CREATE UNIQUE INDEX IF NOT EXISTS one_booking_per_slot
     ON ${SCHEMA}.bookings(court_id, date, start) WHERE status IN ('pendiente','pagado');
   CREATE INDEX IF NOT EXISTS bookings_by_date ON ${SCHEMA}.bookings(date);
@@ -122,6 +126,14 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': '
 // (con el preset Node, / y /admin pueden llegar acá en vez de al estático).
 const INDEX = new URL('./public/index.html', import.meta.url), ADMIN = new URL('./public/admin.html', import.meta.url);
 const PAGES = { '/': INDEX, '/index.html': INDEX, '/admin': ADMIN, '/admin.html': ADMIN };
+// Teléfono comparable: últimos 10 dígitos (2613463901 = +54 9 261 346-3901).
+const phoneKey = phone => String(phone).replace(/\D/g, '').slice(-10);
+const PHONE_KEY_SQL = "right(regexp_replace(phone, '[^0-9]', '', 'g'), 10)";
+// IP del cliente (en Vercel la pone su proxy) guardada solo como huella HMAC, nunca en claro.
+const ipHash = req => {
+  const ip = req.headers['x-vercel-forwarded-for'] || req.headers['x-real-ip'] || req.socket?.remoteAddress || '';
+  return createHmac('sha256', SECRET).update(String(ip).split(',')[0].trim()).digest('hex').slice(0, 32);
+};
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function person(b) {
@@ -131,7 +143,7 @@ function person(b) {
   return { name, phone };
 }
 
-async function createBooking(b, admin = false) {
+async function createBooking(b, admin = false, ip = null) {
   const who = person(b);
   if (who.error) return [400, who];
   if (!DATE_RE.test(b.date || '')) return [400, { error: 'Fecha inválida' }];
@@ -143,13 +155,24 @@ async function createBooking(b, admin = false) {
   const slot = (await slots(b.date)).find(s => s.start === b.start);
   if (!slot || slot.past) return [400, { error: 'Ese horario no está disponible' }];
   await prepare(b.date);
+  if (!admin) {
+    // ponytail: dos pedidos simultáneos pueden pasar el conteo a la vez; alcanza para frenar a alguien molestando.
+    const [{ pending }] = await sql`SELECT count(*)::int AS pending FROM ${t.bookings}
+      WHERE status = 'pendiente' AND expires_at IS NOT NULL AND ${sql.unsafe(PHONE_KEY_SQL)} = ${phoneKey(who.phone)}`;
+    if (pending >= MAX_PENDING_PER_PHONE)
+      return [429, { error: `Ya tenés ${pending} reservas sin pagar. Pagalas o esperá a que venzan para reservar otra.` }];
+    const [{ recent }] = await sql`SELECT count(*)::int AS recent FROM ${t.bookings}
+      WHERE ip_hash = ${ip} AND created_at > now() - interval '1 hour'`;
+    if (recent >= MAX_PER_IP_HOUR)
+      return [429, { error: 'Hiciste muchas reservas seguidas. Probá más tarde o escribinos por WhatsApp.' }];
+  }
   const price = court.price + paddles * Number((await settings()).paddle_price);
   const status = admin && b.status === 'pagado' ? 'pagado' : 'pendiente';
   // Las reservas del admin no vencen (pagan en el club); las de la web sí.
   const expires = admin ? null : new Date(Date.now() + PAY_MINUTES * 60e3);
   try {
-    const [r] = await sql`INSERT INTO ${t.bookings} (court_id, date, start, name, phone, price, paddles, status, expires_at)
-      VALUES (${court.id}, ${b.date}, ${b.start}, ${who.name}, ${who.phone}, ${price}, ${paddles}, ${status}, ${expires}) RETURNING id`;
+    const [r] = await sql`INSERT INTO ${t.bookings} (court_id, date, start, name, phone, price, paddles, status, expires_at, ip_hash)
+      VALUES (${court.id}, ${b.date}, ${b.start}, ${who.name}, ${who.phone}, ${price}, ${paddles}, ${status}, ${expires}, ${ip}) RETURNING id`;
     return [201, { id: r.id, price, paddles, court: court.name, date: b.date, start: b.start, minutes: PAY_MINUTES }];
   } catch (e) {
     if (e.code === '23505') return [409, { error: 'Ese turno ya fue reservado, elegí otro' }];
@@ -174,7 +197,7 @@ async function api(req, res, url) {
     const taken = await sql`SELECT court_id, start FROM ${t.bookings} WHERE date = ${date} AND status IN ('pendiente', 'pagado')`;
     return send(res, 200, { slots: await slots(date), taken });
   }
-  if (p === '/api/bookings' && m === 'POST') return send(res, ...(await createBooking(await body(req))));
+  if (p === '/api/bookings' && m === 'POST') return send(res, ...(await createBooking(await body(req), false, ipHash(req))));
 
   if (p === '/api/admin/login' && m === 'POST') {
     const { password } = await body(req);
@@ -209,6 +232,15 @@ async function api(req, res, url) {
     try { await sql`UPDATE ${t.bookings} SET status = ${status}, expires_at = NULL WHERE id = ${id}`; }
     catch (e) { if (e.code !== '23505') throw e; return send(res, 409, { error: 'Ese turno ya tiene otra reserva activa' }); }
     return send(res, 200, { ok: true });
+  }
+  if (p === '/api/admin/cancel-phone' && m === 'POST') {
+    // Limpieza rápida si alguien llenó la grilla: cancela sus reservas web pendientes desde hoy (no toca fijos ni pagadas).
+    const key = phoneKey((await body(req)).phone || '');
+    if (key.length < 8) return send(res, 400, { error: 'Teléfono inválido' });
+    const rows = await sql`UPDATE ${t.bookings} SET status = 'cancelado', expires_at = NULL
+      WHERE status = 'pendiente' AND fixed_id IS NULL AND date >= ${nowAR().date} AND ${sql.unsafe(PHONE_KEY_SQL)} = ${key}
+      RETURNING id`;
+    return send(res, 200, { cancelled: rows.length });
   }
   if (p === '/api/admin/fixed' && m === 'POST') {
     const b = await body(req), who = person(b), wd = Number(b.weekday), today = nowAR().date;

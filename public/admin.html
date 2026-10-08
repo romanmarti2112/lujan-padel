@@ -138,6 +138,7 @@ async function load() {
         <div class="acts">
           ${b.status === 'pendiente' ? `<button class="btn btn-navy btn-sm" data-id="${b.id}" data-st="pagado">Marcar pagado</button>` : `<button class="btn btn-ghost btn-sm" data-id="${b.id}" data-st="pendiente">Pendiente</button>`}
           <button class="btn btn-ghost btn-sm" data-id="${b.id}" data-st="cancelado">Cancelar</button>
+          ${b.expires_at && b.status === 'pendiente' ? `<button class="btn btn-ghost btn-sm" data-cancel-phone="${esc(b.phone)}" title="Si alguien llenó la grilla de reservas falsas">Cancelar todas de este número</button>` : ''}
         </div></div>`;
   $('grid').innerHTML = `<tr><th>Hora</th>${courts.map(c => `<th>${esc(c.name)}</th>`).join('')}</tr>` +
     data.slots.map(s => `<tr><th>${s}</th>${courts.map(c => {
@@ -204,6 +205,12 @@ $('fixedTbl').onclick = run(async e => {
   await api('/api/admin/fixed/' + b.dataset.delFixed, 'DELETE');
 });
 $('grid').onclick = run(async e => {
+  const cp = e.target.closest('[data-cancel-phone]');
+  if (cp) {
+    if (!confirm(`¿Cancelar TODAS las reservas sin pagar del ${cp.dataset.cancelPhone}, de hoy en adelante?`)) return false;
+    const r = await api('/api/admin/cancel-phone', 'POST', { phone: cp.dataset.cancelPhone });
+    return toast(`${r.cancelled} reserva${r.cancelled === 1 ? '' : 's'} cancelada${r.cancelled === 1 ? '' : 's'}`);
+  }
   const b = e.target.closest('[data-st]'); if (!b) return false;
   if (b.dataset.st === 'cancelado' && !confirm('¿Cancelar esta reserva? El turno queda libre.')) return false;
   await api('/api/admin/bookings/' + b.dataset.id, 'PATCH', { status: b.dataset.st });

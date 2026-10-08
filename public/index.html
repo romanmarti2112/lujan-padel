@@ -79,11 +79,11 @@
       </g>
     </svg>
     <div class="wrap">
-      <p class="eyebrow" style="color:var(--ball)">Luján de Cuyo · Mendoza</p>
-      <h1>Tu cancha te <span>espera</span></h1>
-      <p>Elegí el día, el horario y la cancha. Reservá en menos de un minuto y pagá con Mercado Pago.</p>
-      <div class="cta">
-        <a class="btn btn-ball" href="#reservar">Ver turnos disponibles</a>
+      <p class="eyebrow enter" style="color:var(--ball);--d:0">Luján de Cuyo · Mendoza</p>
+      <h1 class="enter" style="--d:1">Tu cancha te <span>espera</span></h1>
+      <p class="enter" style="--d:2">Elegí el día, el horario y la cancha. Reservá en menos de un minuto y pagá con Mercado Pago.</p>
+      <div class="cta enter" style="--d:3">
+        <a class="btn btn-ball shine" href="#reservar">Ver turnos disponibles</a>
         <a class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" href="https://wa.me/542613463901" target="_blank" rel="noopener">Consultas por WhatsApp</a>
       </div>
     </div>
@@ -107,7 +107,7 @@
         <span><i style="background:var(--ball)"></i>Seleccionado</span>
         <span><i style="background:#f1f3f7;border:1.5px solid var(--line)"></i>Ocupado</span>
       </div>
-      <div class="courts" id="courts" aria-live="polite"><p>Cargando turnos…</p></div>
+      <div class="courts" id="courts" aria-live="polite"></div>
     </div>
   </section>
 
@@ -148,7 +148,7 @@
 
   <div class="bar" id="bar">
     <div class="wrap">
-      <span id="barText"></span>
+      <span class="bar-info"><span class="bar-ball" aria-hidden="true"></span><span id="barText"></span></span>
       <button class="btn btn-ball" id="barBtn">Continuar</button>
     </div>
   </div>
@@ -227,12 +227,14 @@ function renderDays() {
   }).join('');
 }
 
+const LOADER = '<div class="loader" role="status"><span class="loader-ball"></span><span class="loader-shadow"></span><span>Buscando turnos…</span></div>';
 async function load() {
   pick = null; updateBar();
+  $('courts').innerHTML = LOADER;
   const { slots, taken } = await api('/api/availability?date=' + date);
   const busy = new Set(taken.map(t => t.court_id + '|' + t.start));
-  $('courts').innerHTML = info.courts.map(c => `
-    <article class="court">
+  $('courts').innerHTML = info.courts.map((c, i) => `
+    <article class="court" style="--i:${i}">
       <header><div><h3>${c.name}</h3><span class="kind">${c.kind}</span></div><span class="price">${money(c.price)} <small style="color:var(--muted);font-weight:600">/ ${info.slot} min</small></span></header>
       <div class="slots">${slots.map(s => {
         const off = s.past || busy.has(c.id + '|' + s.start);
@@ -287,14 +289,27 @@ $('form').onsubmit = async e => {
     load();
   } catch (err) {
     $('formErr').textContent = err.message;
+    $('formErr').classList.remove('shake'); void $('formErr').offsetWidth; $('formErr').classList.add('shake');
     if (/reservado/.test(err.message)) load();
   } finally { $('submitBtn').disabled = false; }
 };
 $('copyBtn').onclick = async () => {
-  try { await navigator.clipboard.writeText(ALIAS); $('copyBtn').textContent = '¡Copiado!'; }
+  try { await navigator.clipboard.writeText(ALIAS); $('copyBtn').textContent = '¡Copiado!'; $('copyBtn').classList.add('ok'); }
   catch { $('copyBtn').textContent = 'Copialo a mano'; }
-  setTimeout(() => $('copyBtn').textContent = 'Copiar', 2000);
+  setTimeout(() => { $('copyBtn').textContent = 'Copiar'; $('copyBtn').classList.remove('ok'); }, 2000);
 };
+
+// Aparecer al hacer scroll (solo si se permiten animaciones; sin JS todo se ve normal).
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+  const io = new IntersectionObserver(entries => entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }), { threshold: .15 });
+  document.querySelectorAll('.section .eyebrow, .section h2, .stats > div, .gallery img, .contact > *').forEach(el => {
+    el.classList.add('reveal');
+    if (el.matches('.stats > div, .gallery img')) el.style.transitionDelay = [...el.parentNode.children].indexOf(el) * 80 + 'ms';
+    io.observe(el);
+  });
+}
 
 // Peloteo de la portada: la pelota se mueve en metros (X lateral, z profundidad 0..1, H altura) y se proyecta a la cancha dibujada.
 (() => {
