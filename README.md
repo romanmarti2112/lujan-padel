@@ -20,3 +20,11 @@ Las tablas se crean solas la primera vez, en el esquema `lujan_padel`. Ese esque
 3. **Deploy**. La web queda en `https://<tu-proyecto>.vercel.app` y el panel en `/admin`.
 
 Vercel sirve `public/` como estático y manda el resto (`/api/*`) a `server.js`, que exporta el handler. `vercel.json` corre la función en `cle1` (Cleveland), al lado de la base de Supabase en `us-east-2`.
+
+## Seguridad
+
+- **Secretos:** `DATABASE_URL` y `ADMIN_PASSWORD` van solo en `.env` (local) y en las variables de entorno de Vercel. `.gitignore` excluye cualquier `.env*` menos `.env.example`, que nunca lleva valores reales.
+- **Panel:** la clave tiene que tener 12 caracteres o más (si no, el servidor no arranca). Hay 5 intentos fallidos cada 15 minutos por conexión. La sesión es una cookie `HttpOnly`, `Secure` y `SameSite=Strict`, firmada con una clave derivada con scrypt. Si se cambia `ADMIN_PASSWORD`, se cierran todas las sesiones.
+- **Base de datos:** las tablas están en el esquema `lujan_padel`, que no está expuesto por la API de Supabase. Tienen RLS sin políticas, y los roles `anon` y `authenticated` no tienen acceso. Todas las consultas usan parámetros.
+- **Navegador:** hay Content-Security-Policy (sin scripts inline), `X-Frame-Options: DENY`, HSTS y `nosniff`, tanto desde `server.js` como desde `vercel.json`. Todo dato de usuario se escapa antes de mostrarlo.
+- **Abuso:** se permiten 2 reservas sin pagar por teléfono y 4 reservas por hora por conexión. La IP se guarda solo como huella HMAC.

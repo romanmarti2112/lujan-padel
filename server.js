@@ -1,8 +1,8 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
-import { timingSafeEqual, createHash, createHmac } from 'node:crypto';
-import { extname, join, normalize, resolve } from 'node:path';
+import { timingSafeEqual, createHash, createHmac, scryptSync } from 'node:crypto';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = process.env.PORT || 3000;
@@ -23,12 +23,13 @@ if (!DATABASE_URL) {
 const isLocal = /@(127\.0\.0\.1|localhost)[:/]/.test(DATABASE_URL);
 // La clave por defecto es pública (está en el repo): solo vale para la base local de prueba.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (isLocal ? 'lujanpadel' : '');
-if (!ADMIN_PASSWORD || (!isLocal && ADMIN_PASSWORD === 'cambiame')) throw new Error('Configurá ADMIN_PASSWORD con una clave propia');
+if (!ADMIN_PASSWORD || (!isLocal && (ADMIN_PASSWORD === 'cambiame' || ADMIN_PASSWORD.length < 12)))
+  throw new Error('Configurá ADMIN_PASSWORD con una clave propia de al menos 12 caracteres');
 // Esquema propio: no choca con otra app en el mismo proyecto y Supabase no lo expone por su API pública.
 const SCHEMA = process.env.DB_SCHEMA || 'lujan_padel';
 if (!/^[a-z_][a-z0-9_]*$/.test(SCHEMA)) throw new Error('DB_SCHEMA inválido');
 const sql = postgres(DATABASE_URL, { ssl: isLocal ? false : 'require', prepare: false, onnotice: () => {} });
-const t = Object.fromEntries(['courts', 'settings', 'fixed', 'bookings'].map(n => [n, sql(`${SCHEMA}.${n}`)]));
+const t = Object.fromEntries(['courts', 'settings', 'fixed', 'bookings', 'login_fails'].map(n => [n, sql(`${SCHEMA}.${n}`)]));
 
 await sql.unsafe(`
   CREATE SCHEMA IF NOT EXISTS ${SCHEMA};
@@ -49,6 +50,8 @@ await sql.unsafe(`
     status text NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','pagado','cancelado','vencido')),
     expires_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
   ALTER TABLE ${SCHEMA}.bookings ADD COLUMN IF NOT EXISTS ip_hash text;
+  CREATE TABLE IF NOT EXISTS ${SCHEMA}.login_fails (ip_hash text NOT NULL, at timestamptz NOT NULL DEFAULT now());
+  CREATE INDEX IF NOT EXISTS login_fails_by_ip ON ${SCHEMA}.login_fails(ip_hash, at);
   CREATE UNIQUE INDEX IF NOT EXISTS one_booking_per_slot
     ON ${SCHEMA}.bookings(court_id, date, start) WHERE status IN ('pendiente','pagado');
   CREATE INDEX IF NOT EXISTS bookings_by_date ON ${SCHEMA}.bookings(date);
@@ -57,6 +60,7 @@ await sql.unsafe(`
   ALTER TABLE ${SCHEMA}.settings ENABLE ROW LEVEL SECURITY;
   ALTER TABLE ${SCHEMA}.fixed ENABLE ROW LEVEL SECURITY;
   ALTER TABLE ${SCHEMA}.bookings ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE ${SCHEMA}.login_fails ENABLE ROW LEVEL SECURITY;
   INSERT INTO ${SCHEMA}.settings VALUES ('open','08:30'), ('close','01:00'), ('slot','90'), ('paddle_price','3000')
     ON CONFLICT DO NOTHING;
 `);
@@ -97,9 +101,11 @@ async function prepare(date) {
 
 // --- auth ---
 // Cookie firmada (vencimiento.firma) en vez de sesiones en memoria: en Vercel cada pedido puede caer en otra instancia.
-// Cambiar ADMIN_PASSWORD invalida todas las sesiones.
+// Cambiar ADMIN_PASSWORD invalida todas las sesiones. La clave de firma sale de scrypt (lento a propósito):
+// si alguien roba una cookie, no puede probar millones de contraseñas por segundo contra la firma.
 const sha = s => createHash('sha256').update(String(s)).digest();
-const SECRET = sha('lujan-admin:' + ADMIN_PASSWORD);
+const SECRET = scryptSync(ADMIN_PASSWORD, 'lujan-padel-session-v1', 32);
+const LOGIN_MAX_FAILS = 5, LOGIN_WINDOW_MIN = 15;
 const sign = exp => createHmac('sha256', SECRET).update(String(exp)).digest();
 const SESSION_HOURS = 12;
 const newSession = () => { const exp = Date.now() + SESSION_HOURS * 3600e3; return `${exp}.${sign(exp).toString('hex')}`; };
@@ -111,15 +117,27 @@ const cookie = (req, value, maxAge) =>
   `admin=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 
 // --- http helpers ---
+// Cabeceras de seguridad para todo lo que sirve el servidor (en Vercel, vercel.json pone las mismas a los estáticos).
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src https://www.google.com; " +
+    "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+};
 const send = (res, code, data, headers = {}) => {
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
+  res.writeHead(code, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(JSON.stringify(data));
 };
-// Vercel ya parsea el JSON en req.body; en local se lee el stream.
-const body = req => 'body' in req ? Promise.resolve(req.body ?? {}) : new Promise((ok, fail) => {
+// Vercel ya parsea el JSON en req.body; en local se lee el stream. Siempre devuelve un objeto plano.
+const asObject = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+const body = req => 'body' in req ? Promise.resolve(asObject(req.body)) : new Promise((ok, fail) => {
   let raw = '';
   req.on('data', c => { raw += c; if (raw.length > 1e4) { fail(new Error('too big')); req.destroy(); } });
-  req.on('end', () => { try { ok(raw ? JSON.parse(raw) : {}); } catch { fail(new Error('bad json')); } });
+  req.on('end', () => { try { ok(asObject(raw ? JSON.parse(raw) : {})); } catch { fail(new Error('bad json')); } });
 });
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml' };
 // Rutas literales con new URL(...) para que Vercel empaquete los HTML dentro de la función
@@ -135,6 +153,12 @@ const ipHash = req => {
   return createHmac('sha256', SECRET).update(String(ip).split(',')[0].trim()).digest('hex').slice(0, 32);
 };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Fecha real (rechaza 2026-02-31 y similares).
+const validDate = d => {
+  const ms = typeof d === 'string' && DATE_RE.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN;
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === d;
+};
+const text = (v, max) => String(v ?? '').trim().slice(0, max);
 
 function person(b) {
   const name = String(b.name || '').trim(), phone = String(b.phone || '').replace(/[^\d+]/g, '');
@@ -146,7 +170,7 @@ function person(b) {
 async function createBooking(b, admin = false, ip = null) {
   const who = person(b);
   if (who.error) return [400, who];
-  if (!DATE_RE.test(b.date || '')) return [400, { error: 'Fecha inválida' }];
+  if (!validDate(b.date)) return [400, { error: 'Fecha inválida' }];
   if (!admin && b.date > addDays(nowAR().date, 30)) return [400, { error: 'Se puede reservar hasta 30 días antes' }];
   const paddles = Number(b.paddles || 0);
   if (!Number.isInteger(paddles) || paddles < 0 || paddles > MAX_PADDLES) return [400, { error: 'Cantidad de paletas inválida' }];
@@ -192,7 +216,7 @@ async function api(req, res, url) {
   }
   if (p === '/api/availability' && m === 'GET') {
     const date = url.searchParams.get('date');
-    if (!DATE_RE.test(date || '')) return send(res, 400, { error: 'Fecha inválida' });
+    if (!validDate(date)) return send(res, 400, { error: 'Fecha inválida' });
     await prepare(date);
     const taken = await sql`SELECT court_id, start FROM ${t.bookings} WHERE date = ${date} AND status IN ('pendiente', 'pagado')`;
     return send(res, 200, { slots: await slots(date), taken });
@@ -200,8 +224,18 @@ async function api(req, res, url) {
   if (p === '/api/bookings' && m === 'POST') return send(res, ...(await createBooking(await body(req), false, ipHash(req))));
 
   if (p === '/api/admin/login' && m === 'POST') {
+    // Máximo 5 intentos fallidos cada 15 minutos por conexión (en la base, porque en Vercel no hay memoria compartida).
+    const ip = ipHash(req);
+    const [{ fails }] = await sql`SELECT count(*)::int AS fails FROM ${t.login_fails}
+      WHERE ip_hash = ${ip} AND at > now() - make_interval(mins => ${LOGIN_WINDOW_MIN})`;
+    if (fails >= LOGIN_MAX_FAILS) return send(res, 429, { error: `Demasiados intentos. Esperá ${LOGIN_WINDOW_MIN} minutos.` });
     const { password } = await body(req);
-    if (!timingSafeEqual(sha(password), sha(ADMIN_PASSWORD))) return send(res, 401, { error: 'Contraseña incorrecta' });
+    if (!timingSafeEqual(sha(password), sha(ADMIN_PASSWORD))) {
+      await sql`INSERT INTO ${t.login_fails} (ip_hash) VALUES (${ip})`;
+      await sql`DELETE FROM ${t.login_fails} WHERE at < now() - interval '1 day'`;
+      return send(res, 401, { error: 'Contraseña incorrecta' });
+    }
+    await sql`DELETE FROM ${t.login_fails} WHERE ip_hash = ${ip}`;
     return send(res, 200, { ok: true }, { 'Set-Cookie': cookie(req, newSession(), SESSION_HOURS * 3600) });
   }
   if (!p.startsWith('/api/admin/')) return send(res, 404, { error: 'No encontrado' });
@@ -212,7 +246,7 @@ async function api(req, res, url) {
   }
   if (p === '/api/admin/data' && m === 'GET') {
     const date = url.searchParams.get('date');
-    if (!DATE_RE.test(date || '')) return send(res, 400, { error: 'Fecha inválida' });
+    if (!validDate(date)) return send(res, 400, { error: 'Fecha inválida' });
     await prepare(date);
     return send(res, 200, {
       settings: await settings(),
@@ -279,13 +313,13 @@ async function api(req, res, url) {
   if (p === '/api/admin/courts' && m === 'POST') {
     const { name, kind, price } = await body(req);
     if (!String(name || '').trim() || !(Number(price) >= 0)) return send(res, 400, { error: 'Datos inválidos' });
-    await sql`INSERT INTO ${t.courts} (name, kind, price) VALUES (${String(name).trim()}, ${String(kind || 'Blindex').trim()}, ${Math.round(price)})`;
+    await sql`INSERT INTO ${t.courts} (name, kind, price) VALUES (${text(name, 40)}, ${text(kind || 'Blindex', 40)}, ${Math.round(price)})`;
     return send(res, 201, { ok: true });
   }
   if ((id = /^\/api\/admin\/courts\/(\d+)$/.exec(p)?.[1]) && m === 'PUT') {
     const { name, kind, price, active } = await body(req);
     if (!String(name || '').trim() || !(Number(price) >= 0)) return send(res, 400, { error: 'Datos inválidos' });
-    await sql`UPDATE ${t.courts} SET name = ${String(name).trim()}, kind = ${String(kind || '').trim()},
+    await sql`UPDATE ${t.courts} SET name = ${text(name, 40)}, kind = ${text(kind, 40)},
       price = ${Math.round(price)}, active = ${!!active} WHERE id = ${id}`;
     return send(res, 200, { ok: true });
   }
@@ -298,12 +332,13 @@ export default async function handler(req, res) {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     const page = PAGES[url.pathname];
     const full = page ? fileURLToPath(page) : normalize(join(PUBLIC, url.pathname));
-    if (!full.startsWith(PUBLIC)) throw Object.assign(new Error(), { code: 'ENOENT' });
+    // Solo archivos dentro de public/ (con separador: "public2/" no cuenta como "public/").
+    if (!full.startsWith(PUBLIC + sep)) throw Object.assign(new Error(), { code: 'ENOENT' });
     const data = await readFile(full);
-    res.writeHead(200, { 'Content-Type': MIME[extname(full)] || 'application/octet-stream' });
+    res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': MIME[extname(full)] || 'application/octet-stream' });
     res.end(data);
   } catch (e) {
-    if (e.code === 'ENOENT' || e.code === 'EISDIR') { res.writeHead(404); return res.end('No encontrado'); }
+    if (e.code === 'ENOENT' || e.code === 'EISDIR') { res.writeHead(404, SECURITY_HEADERS); return res.end('No encontrado'); }
     if (/too big|bad json/.test(e.message)) return send(res, 400, { error: 'Pedido inválido' });
     console.error(e);
     send(res, 500, { error: 'Error del servidor' });

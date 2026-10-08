@@ -3,11 +3,11 @@ import { spawn } from 'node:child_process';
 import postgres from 'postgres';
 import assert from 'node:assert/strict';
 
-const SCHEMA = `test_${process.pid}`, PORT = 3999, U = `http://localhost:${PORT}`;
+const PASS = 'clave-de-prueba-larga', SCHEMA = `test_${process.pid}`, PORT = 3999, U = `http://localhost:${PORT}`;
 // Sin .env prueba contra un Postgres local en memoria; con .env, contra Supabase.
 const DATABASE_URL = process.env.DATABASE_URL || await (await import('./local-db.js')).startLocalDb();
 const sql = postgres(DATABASE_URL, { ssl: /@(127\.0\.0\.1|localhost)[:/]/.test(DATABASE_URL) ? false : 'require', prepare: false, onnotice: () => {} });
-const srv = spawn(process.execPath, ['server.js'], { env: { ...process.env, DATABASE_URL, PORT, DB_SCHEMA: SCHEMA, ADMIN_PASSWORD: 'x', MAX_PER_IP_HOUR: '9' }, stdio: ['ignore', 'pipe', 'inherit'] });
+const srv = spawn(process.execPath, ['server.js'], { env: { ...process.env, DATABASE_URL, PORT, DB_SCHEMA: SCHEMA, ADMIN_PASSWORD: PASS, MAX_PER_IP_HOUR: '9' }, stdio: ['ignore', 'pipe', 'inherit'] });
 await new Promise((ok, fail) => { srv.stdout.once('data', ok); srv.once('exit', () => fail(new Error('El servidor no arrancó: revisá DATABASE_URL en .env'))); });
 
 const call = async (path, method = 'GET', body, cookie) => {
@@ -38,6 +38,8 @@ try {
   assert.equal((await book({ ...req, start: '09:00' })).status, 400, 'horario fuera de grilla');
   assert.equal((await book({ ...req, court_id: 3, start: '23:30' })).status, 201, 'turno de 23:30 a 01:00');
   assert.equal((await book({ ...req, date: '2020-01-01' })).status, 400, 'fecha pasada');
+  assert.equal((await book({ ...req, date: '2026-02-31' })).status, 400, 'fecha que no existe');
+  assert.equal((await call('/api/availability?date=2026-13-01')).status, 400);
   assert.equal((await book({ ...req, start: '10:00', paddles: 9 })).status, 400, 'paletas de más');
 
   // vence a los 30 min sin verificar
@@ -49,7 +51,7 @@ try {
   // admin
   assert.equal((await call('/api/admin/data?date=' + date)).status, 401);
   assert.equal((await call('/api/admin/login', 'POST', { password: 'mal' })).status, 401);
-  const { cookie } = await call('/api/admin/login', 'POST', { password: 'x' });
+  const { cookie } = await call('/api/admin/login', 'POST', { password: PASS });
   assert.equal((await call(`/api/admin/bookings/${b.data.id}`, 'PATCH', { status: 'pagado' }, cookie)).status, 409, 'no recuperar vencida si ya está tomada');
   assert.equal((await call(`/api/admin/bookings/${b2.data.id}`, 'PATCH', { status: 'pagado' }, cookie)).status, 200);
   await sql`UPDATE ${bookings} SET expires_at = now() - interval '1 minute' WHERE id = ${b2.data.id}`;
@@ -102,6 +104,19 @@ try {
   }
   assert.ok(limited, 'corta las reservas seguidas desde la misma conexión');
   assert.equal((await call('/api/admin/bookings', 'POST', { ...req, court_id: 5, date: nextWeek, start: '20:30', phone: '2617777777' }, cookie)).status, 201, 'el admin no tiene tope');
+
+  // seguridad: cabeceras, archivos fuera de public/ y fuerza bruta en el login
+  const page = await fetch(U + '/');
+  assert.match(page.headers.get('content-security-policy'), /script-src 'self';/);
+  assert.equal(page.headers.get('x-frame-options'), 'DENY');
+  assert.equal((await fetch(U + '/admin.js')).status, 200);
+  for (const path of ['/server.js', '/.env', '/../server.js', '/%2e%2e/server.js', '/public/../server.js'])
+    assert.equal((await fetch(U + path)).status, 404, 'no expone ' + path);
+  assert.equal((await call('/api/admin/data?date=' + date, 'GET', null, cookie)).data.bookings.length > 0, true, 'sesión válida');
+  assert.equal((await call('/api/admin/data?date=' + date, 'GET', null, cookie.replace(/.$/, c => c === '0' ? '1' : '0'))).status, 401, 'cookie adulterada');
+  for (let i = 0; i < 5; i++) assert.equal((await call('/api/admin/login', 'POST', { password: 'adivinando' + i })).status, 401);
+  assert.equal((await call('/api/admin/login', 'POST', { password: 'otra' })).status, 429, 'bloquea tras 5 intentos fallidos');
+  assert.equal((await call('/api/admin/login', 'POST', { password: PASS })).status, 429, 'ni con la clave correcta durante el bloqueo');
   console.log('OK: todas las pruebas pasaron');
 } catch (e) {
   console.error(e);

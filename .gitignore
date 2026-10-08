@@ -1,5 +1,16 @@
-node_modules
+# secretos: cualquier .env menos el ejemplo
 .env
+.env.*
+!.env.example
+
+# dependencias, base local y herramientas
+node_modules
 .local-db
+.vercel
 .agents
 .claude/skills
+
+# basura del sistema y logs
+*.log
+.DS_Store
+Thumbs.db
