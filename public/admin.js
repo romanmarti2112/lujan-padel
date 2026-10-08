@@ -9,6 +9,7 @@ async function api(url, method = 'GET', body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
   const d = await r.json();
   if (r.status === 401 && !url.endsWith('login')) { showLogin(); throw new Error(d.error); }
+  if (r.status === 503) { showLogin(); $('loginErr').textContent = d.error; throw new Error(d.error); }
   if (!r.ok) throw new Error(d.error || 'Error');
   return d;
 }

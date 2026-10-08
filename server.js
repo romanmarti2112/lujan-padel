@@ -23,8 +23,10 @@ if (!DATABASE_URL) {
 const isLocal = /@(127\.0\.0\.1|localhost)[:/]/.test(DATABASE_URL);
 // La clave por defecto es pública (está en el repo): solo vale para la base local de prueba.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (isLocal ? 'lujanpadel' : '');
-if (!ADMIN_PASSWORD || (!isLocal && (ADMIN_PASSWORD === 'cambiame' || ADMIN_PASSWORD.length < 12)))
-  throw new Error('Configurá ADMIN_PASSWORD con una clave propia de al menos 12 caracteres');
+// Clave débil o faltante: la web de reservas sigue andando, pero el panel no deja entrar a nadie.
+const ADMIN_PROBLEM = !ADMIN_PASSWORD ? 'falta ADMIN_PASSWORD'
+  : !isLocal && (ADMIN_PASSWORD === 'cambiame' || ADMIN_PASSWORD.length < 12) ? 'ADMIN_PASSWORD tiene que tener 12 caracteres o más' : '';
+if (ADMIN_PROBLEM) console.error(`⚠ Panel bloqueado: ${ADMIN_PROBLEM}. Cambiala en el .env / Vercel y reiniciá.`);
 // Esquema propio: no choca con otra app en el mismo proyecto y Supabase no lo expone por su API pública.
 const SCHEMA = process.env.DB_SCHEMA || 'lujan_padel';
 if (!/^[a-z_][a-z0-9_]*$/.test(SCHEMA)) throw new Error('DB_SCHEMA inválido');
@@ -104,7 +106,7 @@ async function prepare(date) {
 // Cambiar ADMIN_PASSWORD invalida todas las sesiones. La clave de firma sale de scrypt (lento a propósito):
 // si alguien roba una cookie, no puede probar millones de contraseñas por segundo contra la firma.
 const sha = s => createHash('sha256').update(String(s)).digest();
-const SECRET = scryptSync(ADMIN_PASSWORD, 'lujan-padel-session-v1', 32);
+const SECRET = scryptSync(ADMIN_PASSWORD || 'sin-clave', 'lujan-padel-session-v1', 32);
 const LOGIN_MAX_FAILS = 5, LOGIN_WINDOW_MIN = 15;
 const sign = exp => createHmac('sha256', SECRET).update(String(exp)).digest();
 const SESSION_HOURS = 12;
@@ -223,6 +225,8 @@ async function api(req, res, url) {
   }
   if (p === '/api/bookings' && m === 'POST') return send(res, ...(await createBooking(await body(req), false, ipHash(req))));
 
+  if (p.startsWith('/api/admin/') && ADMIN_PROBLEM)
+    return send(res, 503, { error: `Panel bloqueado por seguridad: ${ADMIN_PROBLEM}. Cambiala en Vercel → Settings → Environment Variables y hacé Redeploy.` });
   if (p === '/api/admin/login' && m === 'POST') {
     // Máximo 5 intentos fallidos cada 15 minutos por conexión (en la base, porque en Vercel no hay memoria compartida).
     const ip = ipHash(req);
